@@ -6,7 +6,7 @@ import java.time.LocalDateTime;
 public class Feedback {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name="feedback_id") private Integer feedbackId;
-    @OneToOne @JoinColumn(name="booking_id", referencedColumnName="booking_id", nullable=false, unique=true)
+    @OneToOne @JoinColumn(name="booking_id", nullable=false, unique=true)
     private Booking booking;
     private Integer rating;
     @Column(name="review_text") private String reviewText;
