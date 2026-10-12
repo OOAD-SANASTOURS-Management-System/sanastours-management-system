@@ -7,6 +7,7 @@ public class User {
     @Column(name="user_id") private Integer userId;
     @Column(nullable=false, unique=true) private String username;
     @Column(nullable=false, unique=true) private String email;
+    @com.fasterxml.jackson.annotation.JsonIgnore
     @Column(name="password_hash", nullable=false) private String passwordHash;
     @Column(nullable=false) private String role;
     @Column(name="account_status") private String accountStatus = "ACTIVE";
