@@ -238,11 +238,15 @@ public class BookingController {
             }
         }
 
-        if ("Booked".equalsIgnoreCase(inquiry.getInquiryStatus())) {
+        // "Booked" is no longer written to an inquiry, but rows created before
+        // that change still carry it.
+        if ("Booked".equalsIgnoreCase(inquiry.getInquiryStatus())
+                || bookingRepository.existsByQuotation_Inquiry_InquiryId(inquiry.getInquiryId())) {
             return ResponseEntity.badRequest().body("This inquiry has already been converted to a booking.");
         }
-        if (!"Quoted".equalsIgnoreCase(inquiry.getInquiryStatus())) {
-            return ResponseEntity.badRequest().body("You can only book an inquiry after it has been Quoted by an Admin.");
+        if (!Validation.isQuotationSent(inquiry.getInquiryStatus())) {
+            return ResponseEntity.badRequest().body(
+                    "You can only book an inquiry once a quotation has been sent for it.");
         }
 
         List<Quotation> quotes = quotationRepository.findByInquiry_InquiryId(inquiry.getInquiryId());
@@ -266,6 +270,9 @@ public class BookingController {
                     "This inquiry has more than one quotation; please say which one you are accepting.");
         }
 
+        if ("Accepted".equalsIgnoreCase(accepted.getQuotationStatus())) {
+            return ResponseEntity.badRequest().body("That quotation has already been accepted and booked.");
+        }
         if ("Rejected".equalsIgnoreCase(accepted.getQuotationStatus())) {
             return ResponseEntity.badRequest().body("That quotation was rejected and can no longer be accepted.");
         }
@@ -318,8 +325,10 @@ public class BookingController {
             }
         }
 
-        inquiry.setInquiryStatus("Booked");
-        inquiryRepository.save(inquiry);
+        // The inquiry stays at "Quotation Sent": that is the last thing that
+        // happened to the inquiry itself, and what follows belongs to the
+        // booking. Converting twice is prevented by the accepted quotation and
+        // the existing-booking check above, not by a status on the inquiry.
 
         Booking saved = bookingRepository.save(booking);
         return ResponseEntity.ok(saved);
