@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import Topbar from '../components/Topbar';
 import GenericTable from '../components/GenericTable';
+import { applyFilters, todayIso } from '../utils/filters';
+import { API_BASE } from '../api';
 
 const Drivers = () => {
   const [view, setView] = useState('list'); 
   const [selectedDriver, setSelectedDriver] = useState(null);
   const [drivers, setDrivers] = useState([]);
+  // Fixes 8.1 / 8.2.
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
 
   const [formData, setFormData] = useState({
     driverId: null,
@@ -25,7 +30,7 @@ const Drivers = () => {
 
   const fetchData = async () => {
     try {
-      const res = await fetch('http://localhost:8081/api/drivers', { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }});
+      const res = await fetch(`${API_BASE}/api/drivers`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }});
       if (res.ok) {
         const data = await res.json();
         setDrivers(Array.isArray(data) ? data.map(d => ({
@@ -59,9 +64,43 @@ const Drivers = () => {
       alert("Username and Password are required to create a new driver account.");
       return;
     }
+    // Fix 3.2: the email was labelled optional, but user.email is NOT NULL
+    // UNIQUE, so saving without one produced a 500.
+    if (!isEdit && !formData.email?.trim()) {
+      alert("An email address is required to create the driver's login.");
+      return;
+    }
+    // Fix 3.6: no password rule existed.
+    if (!isEdit && (formData.password.length < 8
+        || !/[A-Za-z]/.test(formData.password) || !/[0-9]/.test(formData.password))) {
+      alert('The temporary password must be at least 8 characters and contain a letter and a number.');
+      return;
+    }
+    if (!formData.nic?.trim()) {
+      alert('NIC number is required.');
+      return;
+    }
+    // Fix 7.10: an already-expired licence was accepted.
+    if (!formData.licenseExpiryDate) {
+      alert('Licence expiry date is required.');
+      return;
+    }
+    if (!isEdit && new Date(formData.licenseExpiryDate) < new Date(todayIso())) {
+      alert('That licence has already expired.');
+      return;
+    }
+    // Fix 3.3: nic and licence number are UNIQUE in the database.
+    const clash = drivers.find(d => d.driverId !== formData.driverId && (
+      (formData.nic && (d.nic || '').toLowerCase() === formData.nic.trim().toLowerCase()) ||
+      (formData.licenseNumber && (d.licenseNumber || '').toLowerCase() === formData.licenseNumber.trim().toLowerCase())
+    ));
+    if (clash) {
+      alert(`Driver ${clash.driverName} already has that NIC or licence number.`);
+      return;
+    }
 
     try {
-      const url = isEdit ? `http://localhost:8081/api/drivers/${formData.driverId}` : `http://localhost:8081/api/drivers`;
+      const url = isEdit ? `${API_BASE}/api/drivers/${formData.driverId}` : `${API_BASE}/api/drivers`;
       const method = isEdit ? 'PUT' : 'POST';
       
       const payload = {
@@ -95,7 +134,7 @@ const Drivers = () => {
   const handleDelete = async (row) => {
     if(window.confirm('Are you sure you want to delete this driver?')) {
       try {
-        const res = await fetch(`http://localhost:8081/api/drivers/${row.driverId}`, {
+        const res = await fetch(`${API_BASE}/api/drivers/${row.driverId}`, {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
         });
@@ -113,9 +152,9 @@ const Drivers = () => {
     <div className="p-8">
       <div className="flex justify-between items-center mb-6">
         <div className="flex gap-4">
-          <input type="text" placeholder="Search drivers..." className="bg-[#e5e7eb] font-semibold text-gray-700 border-none rounded px-4 py-2 text-sm w-64 focus:outline-none" />
-          <select className="border border-gray-300 rounded px-4 py-2 text-sm text-gray-600 focus:outline-none w-48">
-            <option value="">Status</option>
+          <input type="text" placeholder="Search drivers..." value={search} onChange={e => setSearch(e.target.value)} className="bg-[#e5e7eb] font-semibold text-gray-700 border-none rounded px-4 py-2 text-sm w-64 focus:outline-none" />
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="border border-gray-300 rounded px-4 py-2 text-sm text-gray-600 focus:outline-none w-48">
+            <option value="">All statuses</option>
             <option value="Available">Available</option>
             <option value="Assigned">Assigned</option>
             <option value="Inactive">Inactive</option>
@@ -144,7 +183,12 @@ const Drivers = () => {
       
       <GenericTable 
         columns={columns} 
-        data={drivers} 
+        data={applyFilters(drivers, {
+          query: search,
+          fields: ['id', 'driverName', 'licenseNumber', 'phone', 'nic'],
+          status: statusFilter,
+          statusField: 'status'
+        })} 
         onView={(row) => { 
           setSelectedDriver(row); 
           setView('view'); 
@@ -160,7 +204,10 @@ const Drivers = () => {
             licenseExpiryDate: row.licenseExpiryDate || '',
             experienceYears: row.experienceYears || '',
             driverStatus: row.driverStatus || 'Available',
-            notes: row.notes || ''
+            notes: row.notes || '',
+            username: '',
+            email: '',
+            password: ''
           });
           setView('edit');
         }}
@@ -189,7 +236,7 @@ const Drivers = () => {
                   <input type="password" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-orange-500" />
                 </div>
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email Address (Optional)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email Address *</label>
                   <input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-orange-500" />
                 </div>
               </div>
@@ -214,7 +261,7 @@ const Drivers = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Experience (Years)</label>
-              <input type="number" value={formData.experienceYears} onChange={e => setFormData({...formData, experienceYears: e.target.value})} className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-orange-500" />
+              <input type="number" min="0" max="70" value={formData.experienceYears} onChange={e => setFormData({...formData, experienceYears: e.target.value})} className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-orange-500" />
             </div>
           </div>
 
@@ -225,7 +272,7 @@ const Drivers = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Licence Expiry Date</label>
-              <input type="date" value={formData.licenseExpiryDate} onChange={e => setFormData({...formData, licenseExpiryDate: e.target.value})} className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-orange-500" />
+              <input type="date" min={todayIso()} value={formData.licenseExpiryDate} onChange={e => setFormData({...formData, licenseExpiryDate: e.target.value})} className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-orange-500" />
             </div>
           </div>
 
@@ -307,7 +354,10 @@ const Drivers = () => {
               licenseExpiryDate: selectedDriver.licenseExpiryDate || '',
               experienceYears: selectedDriver.experienceYears || '',
               driverStatus: selectedDriver.driverStatus || 'Available',
-              notes: selectedDriver.notes || ''
+              notes: selectedDriver.notes || '',
+              username: '',
+              email: '',
+              password: ''
             });
             setView('edit');
           }} className="px-6 py-2 bg-[#f97316] text-white rounded font-medium hover:bg-orange-600">Edit Driver</button>

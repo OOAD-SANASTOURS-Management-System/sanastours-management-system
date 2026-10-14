@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import Topbar from '../components/Topbar';
 import GenericTable from '../components/GenericTable';
+import { applyFilters } from '../utils/filters';
+import { API_BASE } from '../api';
 
 const Vehicles = () => {
   const [view, setView] = useState('list'); 
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [vehicles, setVehicles] = useState([]);
+  // Fixes 8.1 / 8.2.
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
 
   const [formData, setFormData] = useState({
     vehicleId: null,
@@ -19,7 +24,7 @@ const Vehicles = () => {
 
   const fetchData = async () => {
     try {
-      const res = await fetch('http://localhost:8081/api/vehicles', { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }});
+      const res = await fetch(`${API_BASE}/api/vehicles`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }});
       if (res.ok) {
         const data = await res.json();
         setVehicles(Array.isArray(data) ? data.map(v => ({
@@ -45,13 +50,27 @@ const Vehicles = () => {
   ];
 
   const handleSave = async () => {
-    if (!formData.registrationNo || !formData.model) {
+    if (!formData.registrationNo?.trim() || !formData.model?.trim()) {
       alert("Registration Number and Model are required.");
+      return;
+    }
+    // Validation the form never had (fix 7.12), including the duplicate
+    // registration that used to come back as an unhandled 500 (fix 6.11).
+    const capacity = parseInt(formData.capacity);
+    if (!capacity || capacity < 1 || capacity > 100) {
+      alert('Capacity must be between 1 and 100 passengers.');
+      return;
+    }
+    const clash = vehicles.find(v =>
+      v.vehicleId !== formData.vehicleId &&
+      (v.registrationNo || '').trim().toLowerCase() === formData.registrationNo.trim().toLowerCase());
+    if (clash) {
+      alert(`A vehicle with registration ${formData.registrationNo.trim()} already exists.`);
       return;
     }
     try {
       const isEdit = view === 'edit';
-      const url = isEdit ? `http://localhost:8081/api/vehicles/${formData.vehicleId}` : `http://localhost:8081/api/vehicles`;
+      const url = isEdit ? `${API_BASE}/api/vehicles/${formData.vehicleId}` : `${API_BASE}/api/vehicles`;
       const method = isEdit ? 'PUT' : 'POST';
       
       const payload = {
@@ -81,7 +100,7 @@ const Vehicles = () => {
   const handleDelete = async (row) => {
     if(window.confirm('Are you sure you want to delete this vehicle?')) {
       try {
-        const res = await fetch(`http://localhost:8081/api/vehicles/${row.vehicleId}`, {
+        const res = await fetch(`${API_BASE}/api/vehicles/${row.vehicleId}`, {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
         });
@@ -99,9 +118,9 @@ const Vehicles = () => {
     <div className="p-8">
       <div className="flex justify-between items-center mb-6">
         <div className="flex gap-4">
-          <input type="text" placeholder="Search vehicles..." className="bg-[#e5e7eb] font-semibold text-gray-700 border-none rounded px-4 py-2 text-sm w-64 focus:outline-none" />
-          <select className="border border-gray-300 rounded px-4 py-2 text-sm text-gray-600 focus:outline-none w-48">
-            <option value="">Status</option>
+          <input type="text" placeholder="Search vehicles..." value={search} onChange={e => setSearch(e.target.value)} className="bg-[#e5e7eb] font-semibold text-gray-700 border-none rounded px-4 py-2 text-sm w-64 focus:outline-none" />
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="border border-gray-300 rounded px-4 py-2 text-sm text-gray-600 focus:outline-none w-48">
+            <option value="">All statuses</option>
             <option value="Available">Available</option>
             <option value="Assigned">Assigned</option>
             <option value="Maintenance">Maintenance</option>
@@ -126,7 +145,12 @@ const Vehicles = () => {
       
       <GenericTable 
         columns={columns} 
-        data={vehicles} 
+        data={applyFilters(vehicles, {
+          query: search,
+          fields: ['id', 'registrationNo', 'type', 'model', 'capacityDisplay'],
+          status: statusFilter,
+          statusField: 'status'
+        })} 
         onView={(row) => { 
           setSelectedVehicle(row); 
           setView('view'); 
@@ -178,7 +202,7 @@ const Vehicles = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Capacity (Passengers)</label>
-              <input type="number" value={formData.capacity} onChange={e => setFormData({...formData, capacity: e.target.value})} className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-orange-500" />
+              <input type="number" min="1" max="100" value={formData.capacity} onChange={e => setFormData({...formData, capacity: e.target.value})} className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-orange-500" />
             </div>
           </div>
 

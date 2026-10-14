@@ -1,8 +1,7 @@
 import React from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet } from 'react-router-dom';
 
 const DriverSidebar = () => {
-  const navigate = useNavigate();
   
   const handleLogout = () => {
     localStorage.removeItem('user');

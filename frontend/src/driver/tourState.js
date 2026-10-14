@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { TOUR_STEPS, nextStepFor } from '../utils/tourSteps';
+import { useLiveData } from '../utils/useLiveData';
+
+// The step vocabulary and the refreshing loader are shared with the admin
+// screens, so the office and the driver can never show a tour at different
+// stages. Re-exported here so the driver screens keep one import.
+export { TOUR_STEPS, nextStepFor, useLiveData };
 
 /**
  * Shared state rules for the driver screens.
@@ -11,14 +17,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * Classifying in one place means the two screens cannot disagree, and that an
  * unfamiliar status shows up somewhere rather than vanishing.
  */
-
-/** The ordered steps of a tour, as the API and both driver screens use them. */
-export const TOUR_STEPS = [
-  'Tour Started',
-  'Dropped at Destination',
-  'Return Journey Started',
-  'Tour Ended'
-];
 
 /**
  * Which list a tour belongs in.
@@ -60,10 +58,6 @@ export const isUnconfirmed = (booking) =>
 /** A cancelled tour must not accept new trip updates. */
 export const isCancelled = (booking) => classifyTour(booking) === 'cancelled';
 
-/** The next step a driver has not yet recorded, or null when the tour is done. */
-export const nextStepFor = (updates) =>
-  TOUR_STEPS.find((step) => !(updates || []).some((u) => u.stepName === step)) || null;
-
 /** dd Mmm yyyy, or a dash when there is no date. */
 export const formatDate = (value) =>
   value
@@ -71,59 +65,3 @@ export const formatDate = (value) =>
     : '-';
 
 export const bookingRef = (booking) => `BK-${String(booking?.bookingId ?? '').padStart(3, '0')}`;
-
-/**
- * Data that keeps itself current.
- *
- * The driver screens fetched once on mount, so a tour assigned, confirmed or
- * cancelled by the office while the driver had the page open never appeared -
- * the driver had to know to reload. This refetches on a timer and whenever
- * they come back to the tab, which is when a stale screen actually misleads
- * somebody. Polling is enough here: these are small reads, a tour changes a
- * handful of times a day, and it needs nothing of the server.
- *
- * @param loader an async function returning the data
- * @param deps   re-run and restart polling when these change
- */
-export const useLiveData = (loader, deps = []) => {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [updatedAt, setUpdatedAt] = useState(null);
-
-  // Held in a ref so a new function identity on every render does not restart
-  // the timer; the effect depends on `deps` alone.
-  const loaderRef = useRef(loader);
-  loaderRef.current = loader;
-
-  const refresh = useCallback(async () => {
-    try {
-      setData(await loaderRef.current());
-      setUpdatedAt(new Date());
-    } catch (e) {
-      console.error('Could not refresh driver data', e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    const run = () => { if (active && !document.hidden) refresh(); };
-
-    refresh();
-    const timer = setInterval(run, 30000);
-    // Coming back to the tab is the moment a stale screen matters most.
-    document.addEventListener('visibilitychange', run);
-    window.addEventListener('focus', run);
-
-    return () => {
-      active = false;
-      clearInterval(timer);
-      document.removeEventListener('visibilitychange', run);
-      window.removeEventListener('focus', run);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-
-  return { data, loading, updatedAt, refresh };
-};

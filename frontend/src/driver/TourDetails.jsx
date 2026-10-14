@@ -3,25 +3,13 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Topbar from '../components/Topbar';
 import { API_BASE } from '../api';
 import { isCancelled } from './tourState';
+import { TOUR_STEPS, matchesStep } from '../utils/tourSteps';
 
 // Fix 5.8: the step names live in one place so the buttons, the progress list
-// and the completion check can never drift apart again.
-const STEP_TOUR_STARTED = 'Tour Started';
-const STEP_DROPPED = 'Dropped at Destination';
-const STEP_RETURN_STARTED = 'Return Journey Started';
-const STEP_TOUR_ENDED = 'Tour Ended';
-const STEPS = [STEP_TOUR_STARTED, STEP_DROPPED, STEP_RETURN_STARTED, STEP_TOUR_ENDED];
-
-// Older rows may carry the previous wording for the same step.
-const LEGACY_STEP_NAMES = {
-  [STEP_TOUR_STARTED]: ['Start Tour'],
-  [STEP_DROPPED]: ['Tourists Dropped at Destination'],
-  [STEP_RETURN_STARTED]: ['Start Return Journey'],
-  [STEP_TOUR_ENDED]: ['End Tour']
-};
-
-const matchesStep = (update, step) =>
-  update.stepName === step || (LEGACY_STEP_NAMES[step] || []).includes(update.stepName);
+// and the completion check can never drift apart again. They now come from
+// utils/tourSteps, which the office's progress view reads too.
+const STEPS = TOUR_STEPS;
+const [STEP_TOUR_STARTED, , , STEP_TOUR_ENDED] = TOUR_STEPS;
 
 /** Combine the time the driver entered with today's date, as a LocalDateTime. */
 const toUpdateTime = (time) => {
@@ -141,7 +129,10 @@ const TourDetails = () => {
     }
   };
 
+  // fetchDetails is defined in this component and only reads `id`, so it is
+  // deliberately left out of the dependency list below.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     fetchDetails();
 
     // Keep this screen current the same way the dashboard does, so a tour
